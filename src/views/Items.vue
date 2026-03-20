@@ -7,7 +7,7 @@ const items = ref([])
 const categories = ref([])
 const loading = ref(false)
 const error = ref('')
-const form = ref({ name: '', description: '', categoryId: '' })
+const form = ref({ name: '', description: '', categoryId: '', dueDate: '' })
 const newCategoryName = ref('')
 const editingId = ref(null)
 const filterCategoryId = ref('')
@@ -83,13 +83,14 @@ async function create() {
         description: form.value.description || null,
         isDone: false,
         categoryId,
+        dueDate: dueDateFromPicker(form.value.dueDate),
       }),
     })
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`Erreur création (${res.status}): ${text || res.statusText}`)
     }
-    form.value = { name: '', description: '', categoryId: form.value.categoryId }
+    form.value = { name: '', description: '', categoryId: form.value.categoryId, dueDate: '' }
     await fetchItems()
   } catch (e) {
     error.value = e.message
@@ -104,6 +105,7 @@ async function update(item) {
       description: item.description,
       isDone: item.isDone,
       categoryId: item.categoryId ?? null,
+      dueDate: item.dueDate ?? null,
     }
     const res = await fetch(`${API_ITEMS}/${item.id}`, {
       method: 'PUT',
@@ -136,6 +138,37 @@ function toggleDone(item) {
 
 function categoryLabel(item) {
   return item.category?.name ?? ''
+}
+
+/** Chaîne yyyy-MM-dd pour <input type="date"> */
+function dueDateInputValue(iso) {
+  if (!iso) return ''
+  return String(iso).slice(0, 10)
+}
+
+/** Envoie une date à minuit UTC pour cohérence avec l’API */
+function dueDateFromPicker(value) {
+  if (!value) return null
+  return `${value}T00:00:00.000Z`
+}
+
+function formatDueDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+/** Item non terminé et échéance avant aujourd’hui (date locale) */
+function isOverdue(item) {
+  if (item.isDone || !item.dueDate) return false
+  const d = new Date(item.dueDate)
+  const today = new Date()
+  const dueDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return dueDay < todayDay
 }
 
 onMounted(async () => {
@@ -174,12 +207,13 @@ onMounted(async () => {
         <option value="">— Sans catégorie —</option>
         <option v-for="c in categories" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
       </select>
+      <input v-model="form.dueDate" type="date" class="select" title="Échéance (optionnel)" />
       <button type="submit">Ajouter</button>
     </form>
 
     <div v-if="loading" class="loading">Chargement…</div>
     <ul v-else class="list">
-      <li v-for="item in filteredItems" :key="item.id" class="item">
+      <li v-for="item in filteredItems" :key="item.id" class="item" :class="{ overdue: isOverdue(item) }">
         <template v-if="editingId === item.id">
           <input v-model="item.name" />
           <input v-model="item.description" placeholder="Description" />
@@ -191,6 +225,12 @@ onMounted(async () => {
             <option value="">— Sans catégorie —</option>
             <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
+          <input
+            type="date"
+            class="select"
+            :value="dueDateInputValue(item.dueDate)"
+            @change="item.dueDate = dueDateFromPicker($event.target.value)"
+          />
           <button @click="update(item)">Enregistrer</button>
           <button type="button" @click="editingId = null">Annuler</button>
         </template>
@@ -204,6 +244,9 @@ onMounted(async () => {
           <span v-if="categoryLabel(item)" class="cat">{{ categoryLabel(item) }}</span>
           <span class="name" :class="{ done: item.isDone }">{{ item.name }}</span>
           <span v-if="item.description" class="desc" :class="{ done: item.isDone }">{{ item.description }}</span>
+          <span v-if="item.dueDate" class="due" :class="{ done: item.isDone, overdue: isOverdue(item) }">
+            Échéance : {{ formatDueDate(item.dueDate) }}
+          </span>
           <button @click="editingId = item.id">Modifier</button>
           <button type="button" class="danger" @click="remove(item.id)">Supprimer</button>
         </template>
@@ -297,6 +340,17 @@ onMounted(async () => {
 }
 .item .name { font-weight: 500; min-width: 120px; }
 .item .desc { color: #94a3b8; font-size: 0.9rem; }
+.item .due {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.item .due.overdue:not(.done) {
+  color: #f87171;
+  font-weight: 600;
+}
+.item.overdue {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
 .item button {
   padding: 0.35rem 0.75rem;
   background: rgba(255,255,255,0.1);
