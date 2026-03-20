@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import Items from './Items.vue'
+
+function fetchUrl(input) {
+  if (typeof input === 'string') return input
+  if (input && typeof input.url === 'string') return input.url
+  return ''
+}
 
 describe('Items.vue', () => {
   beforeEach(() => {
@@ -39,15 +45,20 @@ describe('Items.vue', () => {
   })
 
   it('affiche les items retournés par l\'API', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve([
-        { id: 1, name: 'Item 1', description: 'Desc 1', createdAt: '2024-01-01' },
-        { id: 2, name: 'Item 2', description: null, createdAt: '2024-01-02' },
-      ]),
+    const payload = [
+      { id: 1, name: 'Item 1', description: 'Desc 1', isDone: false, createdAt: '2024-01-01' },
+      { id: 2, name: 'Item 2', description: null, isDone: false, createdAt: '2024-01-02' },
+    ]
+    vi.mocked(fetch).mockImplementation((input) => {
+      const u = fetchUrl(input)
+      if (u.includes('/categories')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) })
     })
     const wrapper = mount(Items)
-    await vi.waitFor(() => wrapper.findAll('.item').length >= 2, { timeout: 1000 })
+    await flushPromises()
+    await vi.waitFor(() => wrapper.findAll('.item').length >= 2, { timeout: 2000 })
     expect(wrapper.text()).toContain('Item 1')
     expect(wrapper.text()).toContain('Item 2')
     expect(wrapper.text()).toContain('Desc 1')

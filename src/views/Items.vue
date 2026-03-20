@@ -14,6 +14,8 @@ const filterCategoryId = ref('')
 const filterStatus = ref('all')
 /** Recherche en temps réel sur nom + description */
 const searchQuery = ref('')
+/** Tri appliqué après filtres : id | name | dueDate | createdAt */
+const sortBy = ref('id')
 
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -33,6 +35,32 @@ const filteredItems = computed(() => {
 
     return byCategory && byStatus && bySearch
   })
+})
+
+const sortedFilteredItems = computed(() => {
+  const list = [...filteredItems.value]
+  list.sort((a, b) => {
+    switch (sortBy.value) {
+      case 'name':
+        return (a.name ?? '').localeCompare(b.name ?? '', 'fr', { sensitivity: 'base' })
+      case 'dueDate': {
+        const da = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY
+        const db = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY
+        if (da === Number.POSITIVE_INFINITY && db === Number.POSITIVE_INFINITY) return a.id - b.id
+        if (da === Number.POSITIVE_INFINITY) return 1
+        if (db === Number.POSITIVE_INFINITY) return -1
+        return da - db
+      }
+      case 'createdAt': {
+        const ca = new Date(a.createdAt).getTime()
+        const cb = new Date(b.createdAt).getTime()
+        return cb - ca
+      }
+      default:
+        return a.id - b.id
+    }
+  })
+  return list
 })
 
 async function fetchCategories() {
@@ -207,6 +235,12 @@ onMounted(async () => {
         <option value="todo">À faire</option>
         <option value="done">Terminés</option>
       </select>
+      <select v-model="sortBy" class="select" aria-label="Trier la liste">
+        <option value="id">Trier : ordre (id)</option>
+        <option value="name">Trier : nom (A→Z)</option>
+        <option value="dueDate">Trier : échéance (proche d’abord)</option>
+        <option value="createdAt">Trier : création (récent d’abord)</option>
+      </select>
     </div>
     <div class="category-box">
       <h3 class="sub">Nouvelle catégorie</h3>
@@ -229,7 +263,7 @@ onMounted(async () => {
 
     <div v-if="loading" class="loading">Chargement…</div>
     <ul v-else class="list">
-      <li v-for="item in filteredItems" :key="item.id" class="item" :class="{ overdue: isOverdue(item) }">
+      <li v-for="item in sortedFilteredItems" :key="item.id" class="item" :class="{ overdue: isOverdue(item) }">
         <template v-if="editingId === item.id">
           <input v-model="item.name" />
           <input v-model="item.description" placeholder="Description" />
