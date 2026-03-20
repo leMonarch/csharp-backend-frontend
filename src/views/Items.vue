@@ -12,8 +12,12 @@ const newCategoryName = ref('')
 const editingId = ref(null)
 const filterCategoryId = ref('')
 const filterStatus = ref('all')
+/** Recherche en temps réel sur nom + description */
+const searchQuery = ref('')
 
 const filteredItems = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+
   return items.value.filter((item) => {
     const byCategory =
       filterCategoryId.value === '' || item.categoryId === Number(filterCategoryId.value)
@@ -23,7 +27,11 @@ const filteredItems = computed(() => {
       (filterStatus.value === 'todo' && item.isDone === false) ||
       (filterStatus.value === 'done' && item.isDone === true)
 
-    return byCategory && byStatus
+    const name = (item.name ?? '').toLowerCase()
+    const desc = (item.description ?? '').toLowerCase()
+    const bySearch = !q || name.includes(q) || desc.includes(q)
+
+    return byCategory && byStatus && bySearch
   })
 })
 
@@ -181,7 +189,15 @@ onMounted(async () => {
   <div class="items">
     <h2>Items (API C# + MySQL)</h2>
     <p v-if="error" class="error">{{ error }}</p>
-    <div class="form">
+    <div class="form filters-row">
+      <input
+        v-model="searchQuery"
+        type="search"
+        class="search-input"
+        placeholder="Rechercher (nom ou description)…"
+        autocomplete="off"
+        aria-label="Rechercher dans les items"
+      />
       <select v-model="filterCategoryId" class="select">
         <option value="">Toutes les catégories</option>
         <option v-for="c in categories" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
@@ -253,7 +269,9 @@ onMounted(async () => {
       </li>
     </ul>
     <p v-if="!loading && items.length === 0" class="empty">Aucun item. Créez-en un ci-dessus.</p>
-    <p v-else-if="!loading && filteredItems.length === 0" class="empty">Aucun résultat pour ces filtres.</p>
+    <p v-else-if="!loading && filteredItems.length === 0" class="empty">
+      Aucun résultat pour la recherche et les filtres sélectionnés.
+    </p>
   </div>
 </template>
 
@@ -291,6 +309,14 @@ onMounted(async () => {
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
+}
+.filters-row {
+  align-items: stretch;
+}
+.search-input {
+  flex: 1 1 220px;
+  min-width: 200px;
+  max-width: 100%;
 }
 .form input,
 .select {
