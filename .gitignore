@@ -1,0 +1,17 @@
+# Dépendances
+node_modules/
+
+# Build Vite
+dist/
+
+# Cache outil (prébundle deps, etc.)
+node_modules/.vite/
+
+# Env local
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*

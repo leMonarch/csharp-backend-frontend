@@ -7,11 +7,13 @@ const items = ref([])
 const categories = ref([])
 const loading = ref(false)
 const error = ref('')
-const form = ref({ name: '', description: '', categoryId: '', dueDate: '' })
+/** Priorités alignées sur l’API C# : 0=Basse, 1=Normale, 2=Haute */
+const form = ref({ name: '', description: '', categoryId: '', dueDate: '', priority: '1' })
 const newCategoryName = ref('')
 const editingId = ref(null)
 const filterCategoryId = ref('')
 const filterStatus = ref('all')
+const filterPriority = ref('')
 /** Recherche en temps réel sur nom + description */
 const searchQuery = ref('')
 /** Tri appliqué après filtres : id | name | dueDate | createdAt */
@@ -29,11 +31,14 @@ const filteredItems = computed(() => {
       (filterStatus.value === 'todo' && item.isDone === false) ||
       (filterStatus.value === 'done' && item.isDone === true)
 
+    const pr = normalizePriority(item.priority)
+    const byPriority = filterPriority.value === '' || String(pr) === filterPriority.value
+
     const name = (item.name ?? '').toLowerCase()
     const desc = (item.description ?? '').toLowerCase()
     const bySearch = !q || name.includes(q) || desc.includes(q)
 
-    return byCategory && byStatus && bySearch
+    return byCategory && byStatus && byPriority && bySearch
   })
 })
 
@@ -55,6 +60,12 @@ const sortedFilteredItems = computed(() => {
         const ca = new Date(a.createdAt).getTime()
         const cb = new Date(b.createdAt).getTime()
         return cb - ca
+      }
+      case 'priority': {
+        const pa = normalizePriority(a.priority)
+        const pb = normalizePriority(b.priority)
+        if (pb !== pa) return pb - pa
+        return a.id - b.id
       }
       default:
         return a.id - b.id
@@ -120,13 +131,14 @@ async function create() {
         isDone: false,
         categoryId,
         dueDate: dueDateFromPicker(form.value.dueDate),
+        priority: Number(form.value.priority),
       }),
     })
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`Erreur création (${res.status}): ${text || res.statusText}`)
     }
-    form.value = { name: '', description: '', categoryId: form.value.categoryId, dueDate: '' }
+    form.value = { name: '', description: '', categoryId: form.value.categoryId, dueDate: '', priority: '1' }
     await fetchItems()
   } catch (e) {
     error.value = e.message
@@ -142,6 +154,7 @@ async function update(item) {
       isDone: item.isDone,
       categoryId: item.categoryId ?? null,
       dueDate: item.dueDate ?? null,
+      priority: normalizePriority(item.priority),
     }
     const res = await fetch(`${API_ITEMS}/${item.id}`, {
       method: 'PUT',
@@ -174,6 +187,35 @@ function toggleDone(item) {
 
 function categoryLabel(item) {
   return item.category?.name ?? ''
+}
+
+/** 0 / 1 / 2 selon l’enum serveur ; défaut normale si absent */
+function normalizePriority(p) {
+  const n = Number(p)
+  if (n === 0 || n === 1 || n === 2) return n
+  return 1
+}
+
+function priorityLabel(p) {
+  switch (normalizePriority(p)) {
+    case 0:
+      return 'Basse'
+    case 2:
+      return 'Haute'
+    default:
+      return 'Normale'
+  }
+}
+
+function priorityBadgeClass(p) {
+  switch (normalizePriority(p)) {
+    case 0:
+      return 'prio-low'
+    case 2:
+      return 'prio-high'
+    default:
+      return 'prio-normal'
+  }
 }
 
 /** Chaîne yyyy-MM-dd pour <input type="date"> */
@@ -235,11 +277,18 @@ onMounted(async () => {
         <option value="todo">À faire</option>
         <option value="done">Terminés</option>
       </select>
+      <select v-model="filterPriority" class="select" aria-label="Filtrer par priorité">
+        <option value="">Toutes priorités</option>
+        <option value="2">Haute</option>
+        <option value="1">Normale</option>
+        <option value="0">Basse</option>
+      </select>
       <select v-model="sortBy" class="select" aria-label="Trier la liste">
         <option value="id">Trier : ordre (id)</option>
         <option value="name">Trier : nom (A→Z)</option>
         <option value="dueDate">Trier : échéance (proche d’abord)</option>
         <option value="createdAt">Trier : création (récent d’abord)</option>
+        <option value="priority">Trier : priorité (haute d’abord)</option>
       </select>
     </div>
     <div class="category-box">
@@ -258,6 +307,11 @@ onMounted(async () => {
         <option v-for="c in categories" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
       </select>
       <input v-model="form.dueDate" type="date" class="select" title="Échéance (optionnel)" />
+      <select v-model="form.priority" class="select" title="Priorité">
+        <option value="0">Priorité : basse</option>
+        <option value="1">Priorité : normale</option>
+        <option value="2">Priorité : haute</option>
+      </select>
       <button type="submit">Ajouter</button>
     </form>
 
@@ -281,6 +335,16 @@ onMounted(async () => {
             :value="dueDateInputValue(item.dueDate)"
             @change="item.dueDate = dueDateFromPicker($event.target.value)"
           />
+          <select
+            class="select"
+            :value="normalizePriority(item.priority)"
+            title="Priorité"
+            @change="item.priority = Number($event.target.value)"
+          >
+            <option :value="0">Basse</option>
+            <option :value="1">Normale</option>
+            <option :value="2">Haute</option>
+          </select>
           <button @click="update(item)">Enregistrer</button>
           <button type="button" @click="editingId = null">Annuler</button>
         </template>
@@ -291,6 +355,7 @@ onMounted(async () => {
             @change="toggleDone(item)"
             title="Terminé"
           />
+          <span class="prio" :class="priorityBadgeClass(item.priority)">{{ priorityLabel(item.priority) }}</span>
           <span v-if="categoryLabel(item)" class="cat">{{ categoryLabel(item) }}</span>
           <span class="name" :class="{ done: item.isDone }">{{ item.name }}</span>
           <span v-if="item.description" class="desc" :class="{ done: item.isDone }">{{ item.description }}</span>
@@ -388,6 +453,27 @@ onMounted(async () => {
   border-radius: 8px;
   margin-bottom: 0.5rem;
   flex-wrap: wrap;
+}
+.item .prio {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.item .prio.prio-low {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.2);
+}
+.item .prio.prio-normal {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+}
+.item .prio.prio-high {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.2);
 }
 .item .cat {
   font-size: 0.75rem;
